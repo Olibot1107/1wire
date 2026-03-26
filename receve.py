@@ -2,66 +2,76 @@ import RPi.GPIO as GPIO
 import time
 
 DATA_PIN = 17
-BIT_DELAY = 0.002  # MUST match sender!
+TICK_INTERVAL = 0.001  # Must match sender!
+TIMEOUT = 5.0  # 5 seconds
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(DATA_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
-def read_byte():
-    # Wait for LOW state first (clear any noise)
-    timeout = time.time() + 5
-    while GPIO.input(DATA_PIN) == 1:
-        if time.time() > timeout:
+def read_letter():
+    """
+    Count the number of 1s before getting a 0
+    Returns the letter based on count
+    """
+    count = 0
+    start_time = time.perf_counter()
+    tick_num = 0
+    
+    while True:
+        # Check for timeout
+        if time.perf_counter() - start_time > TIMEOUT:
             return None
-    
-    # Now wait for rising edge (start bit)
-    while GPIO.input(DATA_PIN) == 0:
-        if time.time() > timeout:
-            return None
-    
-    # RESYNC: We just caught the rising edge
-    # Use time.perf_counter for precision
-    sync_time = time.perf_counter()
-    
-    # Jump to middle of first data bit
-    next_sample = sync_time + (BIT_DELAY * 1.5)
-    
-    # Read 8 bits with FIXED timing from sync point
-    value = 0
-    for i in range(8):
+        
+        # Sample at precise intervals
+        sample_time = start_time + (tick_num * TICK_INTERVAL)
+        
         # Wait until sample time
-        while time.perf_counter() < next_sample:
+        while time.perf_counter() < sample_time:
             pass
         
-        # Sample the bit
-        if GPIO.input(DATA_PIN):
-            value |= (1 << i)
+        # Read the bit
+        bit = GPIO.input(DATA_PIN)
         
-        # Schedule next sample exactly 1 BIT_DELAY later
-        next_sample += BIT_DELAY
-    
-    # Skip stop bit
-    next_sample += BIT_DELAY
-    while time.perf_counter() < next_sample:
-        pass
-    
-    return value
+        if bit == 1:
+            count += 1
+        else:
+            # Got a 0 - submit the letter
+            if count == 0:
+                # Double 0 = end of message
+                return None
+            elif count == 27:
+                return ' '
+            elif 1 <= count <= 26:
+                letter = chr(ord('a') + count - 1)
+                print(f"  {count} ticks = '{letter}'")
+                return letter
+            else:
+                print(f"  Invalid count: {count}")
+                return '?'
+        
+        tick_num += 1
 
-def read_string():
-    s = ""
+def read_message():
+    msg = ""
+    print("Reading message...")
+    
     while True:
-        byte = read_byte()
-        if byte is None or byte == 0:
+        letter = read_letter()
+        if letter is None:
             break
-        s += chr(byte)
-    return s
+        msg += letter
+    
+    return msg
 
-print("RECEIVER listening...")
+print("=== CLOCK-SYNCED RECEIVER ===")
+print(f"Tick interval: {TICK_INTERVAL*1000}ms")
+print("Listening...\n")
+
 try:
     while True:
-        msg = read_string()
+        msg = read_message()
         if msg:
-            print(f"✓ '{msg}'")
+            print(f"\n✓ RECEIVED: '{msg}'\n")
         time.sleep(0.1)
 except KeyboardInterrupt:
     GPIO.cleanup()
