@@ -2,7 +2,7 @@ import RPi.GPIO as GPIO
 import time
 
 DATA_PIN = 17
-BIT_DELAY = 0.002
+BIT_DELAY = 0.002  # Keep it slow and stable
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(DATA_PIN, GPIO.OUT)
@@ -13,24 +13,23 @@ def send_byte(byte):
     GPIO.output(DATA_PIN, 1)
     time.sleep(BIT_DELAY)
     
-    # 8 data bits LSB first
+    # 8 data bits
     for i in range(8):
         GPIO.output(DATA_PIN, (byte >> i) & 1)
         time.sleep(BIT_DELAY)
     
     # STOP BIT
     GPIO.output(DATA_PIN, 0)
-    time.sleep(BIT_DELAY)
+    time.sleep(BIT_DELAY * 2)  # Extra gap between bytes
 
 def send_string(s):
     print(f"Sending: '{s}'")
     for c in s:
         send_byte(ord(c))
-        print(f"  {c} = {ord(c)}")
     send_byte(0)
-    print("  NULL")
+    time.sleep(0.5)
 
-print("=== SENDER ===")
+print("SENDER ready")
 try:
     while True:
         msg = input("\nSend: ")
