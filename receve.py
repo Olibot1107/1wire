@@ -1,39 +1,26 @@
 import RPi.GPIO as GPIO
 import time
 
-DATA_PIN = 17      # Wire 1
-DATA_PIN_INV = 27  # Wire 2
-BIT_DELAY = 0.00005  # Must match sender!
+DATA_PIN = 17  # Physical pin 11
+BIT_DELAY = 0.000005  # Must match sender EXACTLY!
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(DATA_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-GPIO.setup(DATA_PIN_INV, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-
-def read_bit():
-    """Differential read - compares both wires"""
-    a = GPIO.input(DATA_PIN)
-    b = GPIO.input(DATA_PIN_INV)
-    # If differential: a should be opposite of b
-    # Return the dominant signal
-    return 1 if a > b else 0
 
 def read_byte():
-    # Wait for start bit (DATA=1, INV=0)
-    while True:
-        if GPIO.input(DATA_PIN) == 1 and GPIO.input(DATA_PIN_INV) == 0:
-            break
+    # Wait for start bit (LOW → HIGH transition)
+    while GPIO.input(DATA_PIN) == 0:
+        pass
     
-    time.sleep(BIT_DELAY * 1.5)  # Move to middle of first data bit
+    time.sleep(BIT_DELAY * 1.5)  # Jump to middle of first data bit
     
     value = 0
     for i in range(8):
-        bit = read_bit()
-        value |= (bit << i)
+        if GPIO.input(DATA_PIN):
+            value |= (1 << i)
         time.sleep(BIT_DELAY)
     
-    # Wait for stop bit
-    time.sleep(BIT_DELAY)
-    
+    time.sleep(BIT_DELAY)  # Skip stop bit
     return value
 
 def read_string():
@@ -45,10 +32,10 @@ def read_string():
         s += chr(byte)
     return s
 
-print("Receiver listening...")
+print("Receiver listening (GPIO 17)...")
 try:
     while True:
         msg = read_string()
-        print(f"Received: {msg}")
+        print(f"📩 Received: {msg}")
 except KeyboardInterrupt:
     GPIO.cleanup()
