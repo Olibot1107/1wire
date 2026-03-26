@@ -7,21 +7,23 @@ BIT_DELAY = 0.002
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(DATA_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
-def wait_for_start():
-    while GPIO.input(DATA_PIN) == 1:
-        pass
+def read_byte():
+    # Wait for start bit LOW→HIGH
+    timeout = time.time() + 10
     while GPIO.input(DATA_PIN) == 0:
-        pass
-    return time.perf_counter()
-
-def read_byte(offset_multiplier):
-    start_time = wait_for_start()
+        if time.time() > timeout:
+            return None
     
-    # Try different offsets
-    target = start_time + (BIT_DELAY * offset_multiplier)
+    # We just detected rising edge of start bit
+    # Sample in the MIDDLE of each bit
+    start = time.perf_counter()
+    
+    # Wait to middle of FIRST data bit (1.5 bit periods from start)
+    target = start + (BIT_DELAY * 1.5)
     while time.perf_counter() < target:
         pass
     
+    # Read 8 data bits
     value = 0
     bits = []
     for i in range(8):
@@ -29,24 +31,43 @@ def read_byte(offset_multiplier):
         bits.append(bit)
         value |= (bit << i)
         
+        # Move to middle of next bit
         target += BIT_DELAY
         while time.perf_counter() < target:
             pass
     
-    print(f"  Offset {offset_multiplier}: {bits} = {value:3d} = '{chr(value) if 32<=value<127 else '?'}'")
+    # Verify it's a real byte
+    if value == 0:
+        print(f"  NULL")
+    else:
+        print(f"  {bits} = {value:3d} = '{chr(value)}'")
+    
+    # Wait for stop bit
+    target += BIT_DELAY
+    while time.perf_counter() < target:
+        pass
+    
     return value
 
-print("Testing different timing offsets...")
-print("Expected for 'A': [1,0,0,0,0,0,1,0] = 65")
-print()
+def read_string():
+    s = ""
+    print("Waiting for message...")
+    while True:
+        byte = read_byte()
+        if byte is None:
+            return None
+        if byte == 0:
+            break
+        s += chr(byte)
+    return s
 
-# Test different offsets
-for offset in [1.0, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 2.0]:
-    print(f"\nTrying offset {offset}:")
-    read_byte(offset)
-    read_byte(offset)  # Read the null byte too
-    time.sleep(0.5)
-    print("Press Ctrl+C and re-run sender for next test")
-    input("Press Enter to try next offset...")
+print("=== RECEIVER ===")
+print("Listening...\n")
 
-GPIO.cleanup()
+try:
+    while True:
+        msg = read_string()
+        if msg:
+            print(f"\n>>> '{msg}'\n")
+except KeyboardInterrupt:
+    GPIO.cleanup()
